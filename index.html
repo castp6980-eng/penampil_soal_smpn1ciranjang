@@ -383,6 +383,17 @@ sub { bottom: -0.25em; color: inherit; }
 .jadwal-bar.habis { border-left-color: var(--danger); background: var(--danger-soft); }
 .jadwal-bar.habis #jb-time { color: var(--danger); }
 </style>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"
+      onerror="this.onerror=null;this.href='https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.css'">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"
+        onerror="this.onerror=null;var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.js';document.head.appendChild(s)"></script>
+<style>
+/* Rumus KaTeX di layar soal */
+.q-text .katex, .opt-text .katex { font-size: 1.1em; }
+.q-text .katex-display, .opt-text .katex-display { margin: .6em 0; overflow-x: auto; overflow-y: hidden; padding: 2px 0; }
+.opt-text .katex-display { text-align: left; }
+.opt-text .katex-display > .katex { text-align: left; }
+</style>
 </head>
 <body>
 
@@ -416,7 +427,7 @@ sub { bottom: -0.25em; color: inherit; }
       <div class="splash-status" id="splash-status">Mempersiapkan sistem...</div>
     </div>
   </div>
-  <div class="splash-dev">Sistem Ujian Digital © 2026</div>
+  <div class="splash-dev">Sistem Ujian Digital © 2025</div>
 </div>
 
 <div id="room-loading-overlay">
@@ -492,7 +503,7 @@ sub { bottom: -0.25em; color: inherit; }
     <div class="login-card">
       <div class="field">
         <label>USERNAME / NO. PESERTA</label>
-        <input type="text" id="no-peserta" placeholder="Contoh: 2026001" autocomplete="off">
+        <input type="text" id="no-peserta" placeholder="Contoh: 2025001" autocomplete="off">
         <div class="info-row" id="info-peserta"></div>
         <div class="siswa-detail" id="siswa-detail">
           <div class="siswa-detail-row">
@@ -1064,8 +1075,45 @@ function acakSoal(list) {
 }
 
 /* ═══════════════ RENDER SOAL ═══════════════ */
+/* ═══════════════ RENDER RUMUS (KaTeX) ═══════════════
+   Format yang dikenali di teks soal & pilihan jawaban:
+     $...$  atau  \( ... \)   -> rumus sebaris
+     $$...$$  atau  \[ ... \] -> rumus di baris sendiri
+   Teks di luar pembatas tetap diproses parseMath() (x^2, sqrt(x), 1/2, <=, dst).
+   Tanda dolar biasa ditulis \$ . Jika KaTeX tidak termuat (offline), rumus
+   dikonversi ke simbol Unicode sederhana lewat parseMath(). */
+const MATH_SEG_RE = /(?<!\\)\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|(?<!\\)\$((?:\\.|[^$\\\n])+?)\$/g;
+
+function rawToHtmlPlain(s) {
+  s = String(s || '').replace(/\\\$/g, '\x01');
+  return parseMath(s)
+    .replace(/&(?!amp;|lt;|gt;|quot;|#)/g, '&amp;')
+    .replace(/\n/g, '<br>')
+    .replace(/\x01/g, '$');
+}
+
+function renderTex(tex, display, original) {
+  if (window.katex) {
+    try {
+      return katex.renderToString(tex, { displayMode: display, throwOnError: false, strict: 'ignore' });
+    } catch (_) { /* jatuh ke cadangan */ }
+  }
+  return rawToHtmlPlain(original);
+}
+
 function rawToHtml(s) {
-  return parseMath(String(s || '')).replace(/&(?!amp;|lt;|gt;|quot;|#)/g, '&amp;').replace(/\n/g, '<br>');
+  s = String(s || '');
+  if (!/\$|\\\(|\\\[/.test(s)) return rawToHtmlPlain(s);
+  let out = '', last = 0, m;
+  MATH_SEG_RE.lastIndex = 0;
+  while ((m = MATH_SEG_RE.exec(s)) !== null) {
+    out += rawToHtmlPlain(s.slice(last, m.index));
+    const display = m[1] !== undefined || m[2] !== undefined;
+    const tex = [m[1], m[2], m[3], m[4]].find(x => x !== undefined).trim();
+    out += renderTex(tex, display, m[0]);
+    last = m.index + m[0].length;
+  }
+  return out + rawToHtmlPlain(s.slice(last));
 }
 function renderQuestion(idx) {
   currentIdx = idx;
@@ -1085,7 +1133,7 @@ function renderQuestion(idx) {
   card.innerHTML =
     '<div class="q-number-tag">Soal ' + (idx + 1) + ' dari ' + soalList.length + '</div>' +
     '<div class="q-text">' + rawToHtml(soalTeks) + '</div>' +
-    (gambarSoal ? '<img data-src="' + gambarSoal + '" class="q-img" style="min-height:80px;background:var(--bg)">' : '') +
+    (gambarSoal ? '<img data-src="' + String(gambarSoal).replace(/"/g, '&quot;') + '" referrerpolicy="no-referrer" class="q-img" style="min-height:80px;background:var(--bg)">' : '') +
     '<div class="option-list" id="option-list"></div>';
   const optList = card.querySelector('#option-list');
   if (pilihan.length === 0) {
@@ -1100,7 +1148,7 @@ function renderQuestion(idx) {
       const keySpan = document.createElement('span'); keySpan.className = 'opt-key'; keySpan.textContent = huruf;
       const txtSpan = document.createElement('span'); txtSpan.className = 'opt-text'; txtSpan.innerHTML = rawToHtml(teks);
       if (gambar) {
-        const img = document.createElement('img'); img.setAttribute('data-src', gambar); img.className = 'opt-img'; img.style.cssText = 'min-height:50px;background:var(--bg);display:block;margin-top:8px';
+        const img = document.createElement('img'); img.setAttribute('data-src', gambar); img.referrerPolicy = 'no-referrer'; img.className = 'opt-img'; img.style.cssText = 'min-height:50px;background:var(--bg);display:block;margin-top:8px';
         txtSpan.appendChild(document.createElement('br')); txtSpan.appendChild(img);
       }
       lbl.appendChild(keySpan); lbl.appendChild(txtSpan); wrapper.appendChild(radio); wrapper.appendChild(lbl); optList.appendChild(wrapper);
@@ -1378,18 +1426,54 @@ function imgMemSet(key, val) {
   imgMemCache.set(key, val);
   if (imgMemCache.size > IMG_MEM_MAX) imgMemCache.delete(imgMemCache.keys().next().value);
 }
+/* Bersihkan URL gambar dari spasi, tanda kutip, rumus =IMAGE(), dsb. */
+function normalizeImgUrl(u) {
+  u = String(u || '').trim();
+  const f = u.match(/^=?IMAGE\(\s*["']([^"']+)["']/i); if (f) u = f[1];
+  u = u.replace(/^["'\s]+|["'\s]+$/g, '');
+  if (u.startsWith('//')) u = 'https:' + u;
+  if (/^http:\/\//i.test(u)) u = u.replace(/^http:/i, 'https:');
+  if (/^https?:\/\//i.test(u)) { try { u = encodeURI(decodeURI(u)); } catch (_) {} }
+  return u;
+}
+function showImgFail(img) {
+  img.onerror = null; img.removeAttribute('data-src');
+  img.alt = '⚠ Gambar tidak dapat dimuat'; img.style.minHeight = '60px';
+  img.style.padding = '14px'; img.style.fontSize = '12px'; img.style.color = 'var(--muted)';
+}
+function setImgOk(img, rawUrl) {
+  img.removeAttribute('data-src'); img.style.minHeight = '';
+  img.onload = () => { try { imgMemSet(rawUrl, img.src); } catch (_) {} };
+}
 function loadImagesOnCard() {
   const card = document.getElementById('q-card');
   card.querySelectorAll('img[data-src]').forEach(img => {
-    const rawUrl = img.getAttribute('data-src'); if (!rawUrl) return;
-    if (imgMemCache.has(rawUrl)) { img.src = imgMemCache.get(rawUrl); img.removeAttribute('data-src'); img.style.minHeight = ''; return; }
+    const rawUrl = normalizeImgUrl(img.getAttribute('data-src')); if (!rawUrl) return;
+    img.referrerPolicy = 'no-referrer';   /* lolos dari proteksi hotlink */
+    img.loading = 'eager';
+    if (imgMemCache.has(rawUrl)) { img.src = imgMemCache.get(rawUrl); setImgOk(img, rawUrl); return; }
     const cachedImg = cacheGet('img_' + rawUrl);
-    if (cachedImg) { img.src = cachedImg; img.removeAttribute('data-src'); img.style.minHeight = ''; imgMemSet(rawUrl, cachedImg); return; }
+    if (cachedImg) { img.src = cachedImg; setImgOk(img, rawUrl); imgMemSet(rawUrl, cachedImg); return; }
     if (/^https?:\/\//i.test(rawUrl)) {
-      img.src = rawUrl; img.removeAttribute('data-src'); img.style.minHeight = '';
-      img.onerror = () => { const fid = extractDriveId(rawUrl); if (fid) fetchProxyImage(img, rawUrl, fid); };
-    } else if (rawUrl.startsWith('data:')) { img.src = rawUrl; img.removeAttribute('data-src'); img.style.minHeight = ''; }
-    else { const fid = extractDriveId(rawUrl); if (fid) fetchProxyImage(img, rawUrl, fid); }
+      const fid = extractDriveId(rawUrl);
+      /* Urutan percobaan: langsung -> proxy wsrv.nl -> proxy images.weserv.nl -> proxy Google Drive (GAS) */
+      const tries = [
+        rawUrl,
+        'https://wsrv.nl/?url=' + encodeURIComponent(rawUrl.replace(/^https?:\/\//i, '')),
+        'https://images.weserv.nl/?url=' + encodeURIComponent(rawUrl.replace(/^https?:\/\//i, ''))
+      ];
+      let n = 0;
+      const next = () => {
+        n++;
+        if (n < tries.length) { img.src = tries[n]; return; }
+        if (fid) { img.onerror = () => showImgFail(img); fetchProxyImage(img, rawUrl, fid); }
+        else showImgFail(img);
+      };
+      img.onerror = next;
+      img.onload = () => { img.removeAttribute('data-src'); img.style.minHeight = ''; };
+      img.src = tries[0];
+    } else if (rawUrl.startsWith('data:')) { img.src = rawUrl; setImgOk(img, rawUrl); }
+    else { const fid = extractDriveId(rawUrl); if (fid) fetchProxyImage(img, rawUrl, fid); else showImgFail(img); }
   });
 }
 async function fetchProxyImage(imgEl, cacheKey, fileId) {
