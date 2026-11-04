@@ -371,6 +371,17 @@ sub { bottom: -0.25em; color: inherit; }
 @media (prefers-reduced-motion: reduce) {
   .splash-logo-ring::after, .cover-logo-wrap::after, .brand-logo::after, .splash-logo-ring, .cover-logo-wrap, .brand-logo { animation: none; }
 }
+
+/* Header waktu ujian (muncul otomatis bila admin mengatur jadwal) */
+.jadwal-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--border); border-left: 5px solid var(--accent); border-radius: var(--radius-sm); padding: 12px 18px; margin-bottom: 14px; }
+.jadwal-bar .jb-label { display: block; font-size: 11px; font-weight: 600; color: var(--muted); }
+.jadwal-bar strong { font-size: 14px; font-weight: 800; color: var(--navy); }
+.jadwal-bar .jb-count { text-align: right; }
+.jadwal-bar #jb-time { font-size: 20px; font-variant-numeric: tabular-nums; }
+.jadwal-bar.warn { border-left-color: var(--warn); background: var(--warn-soft); }
+.jadwal-bar.warn #jb-time { color: var(--warn); }
+.jadwal-bar.habis { border-left-color: var(--danger); background: var(--danger-soft); }
+.jadwal-bar.habis #jb-time { color: var(--danger); }
 </style>
 </head>
 <body>
@@ -530,6 +541,10 @@ sub { bottom: -0.25em; color: inherit; }
         <span id="session-saved-chip" style="display:none" class="session-restore-chip">💾 Sesi tersimpan</span>
         <span class="mapel-badge" id="txt-mapel-badge"></span>
       </div>
+    </div>
+    <div class="jadwal-bar hidden" id="jadwal-bar">
+      <div class="jb-info"><span class="jb-label">Waktu ujian</span><strong id="jb-range"></strong></div>
+      <div class="jb-count"><span class="jb-label" id="jb-state">Sisa waktu</span><strong id="jb-time">--:--:--</strong></div>
     </div>
     <div class="timer-bar" id="timer-bar">
       <span class="timer-icon" id="timer-icon">⏳</span>
@@ -720,7 +735,7 @@ function saveSession() {
   cacheSet(sessionKey(siswaAktif['no peserta'] || '', kodeMapelAktif), {
     jawaban, currentIdx, soalList, siswaAktif,
     kodeMapel: kodeMapelAktif, mataPelajaran: mataPelajaranAktif,
-    passwordSelesai: passwordSelesaiAktif,
+    passwordSelesai: passwordSelesaiAktif, jadwal: jadwalAktif,
     savedAt: new Date().toLocaleTimeString('id-ID'),
   }, CACHE_TTL.session);
   showAutosaveBadge();
@@ -968,6 +983,7 @@ function restoreSession(sesi) {
   siswaAktif = sesi.siswaAktif || siswaAktif; submitCardShown = false;
   kodeMapelAktif = sesi.kodeMapel || ''; mataPelajaranAktif = sesi.mataPelajaran || sesi.kodeMapel || '';
   passwordSelesaiAktif = sesi.passwordSelesai || '';
+  setJadwal(sesi.jadwal);
   document.getElementById('txt-nama-siswa').textContent = siswaAktif['nama'] || '';
   document.getElementById('txt-info-siswa').textContent = (siswaAktif['kelas'] || '') + (siswaAktif['sekolah'] ? ' · ' + siswaAktif['sekolah'] : '');
   document.getElementById('txt-mapel-badge').textContent = mataPelajaranAktif;
@@ -989,6 +1005,7 @@ async function prosesLogin(kode, password) {
     if (soalList.length === 0) { toast('warn', 'Soal Kosong', 'Tidak ada soal untuk mata pelajaran ini.'); btn.disabled = false; btn.innerHTML = 'Masuk ke Ruang Ujian'; return; }
     kodeMapelAktif = kode; mataPelajaranAktif = res.mataPelajaran || kode;
     passwordSelesaiAktif = res.passwordSelesai || '';
+    setJadwal(res.jadwal);
     document.getElementById('txt-nama-siswa').textContent = siswaAktif['nama'] || '';
     document.getElementById('txt-info-siswa').textContent = (siswaAktif['kelas'] || '') + (siswaAktif['sekolah'] ? ' · ' + siswaAktif['sekolah'] : '');
     document.getElementById('txt-mapel-badge').textContent = mataPelajaranAktif;
@@ -1417,8 +1434,55 @@ function showModal(opts) {
 }
 function closeModal() { document.getElementById('modal-overlay').classList.remove('show'); }
 
+/* ═══════════════ HEADER WAKTU UJIAN ═══════════════
+   Muncul otomatis hanya jika admin mengatur kode mapel dengan mode
+   "Sesuai jadwal". Hitung mundur memakai jam server (bukan jam HP),
+   jadi tidak bisa dimajukan atau dimundurkan siswa. */
+var jadwalAktif = null, _jadwalTimer = null, _jadwalWarn = false, _jadwalEnd = false;
+function stopJadwal() { if (_jadwalTimer) { clearInterval(_jadwalTimer); _jadwalTimer = null; } }
+function _jbTanggal(ms) { return new Date(ms).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' }); }
+function _jbJam(ms) { return new Date(ms).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Jakarta' }).replace('.', ':'); }
+function setJadwal(info) {
+  stopJadwal(); jadwalAktif = null; _jadwalWarn = false; _jadwalEnd = false;
+  const bar = document.getElementById('jadwal-bar');
+  if (!bar) return;
+  bar.classList.remove('warn', 'habis');
+  if (!info || !info.mulaiMs || !info.selesaiMs) { bar.classList.add('hidden'); return; }
+  jadwalAktif = {
+    mulaiMs: info.mulaiMs, selesaiMs: info.selesaiMs,
+    offsetMs: info.offsetMs !== undefined ? info.offsetMs : (info.serverNowMs - Date.now())
+  };
+  const a = jadwalAktif.mulaiMs, b = jadwalAktif.selesaiMs;
+  document.getElementById('jb-range').textContent = _jbTanggal(a) === _jbTanggal(b)
+    ? _jbTanggal(a) + ', ' + _jbJam(a) + ' – ' + _jbJam(b) + ' WIB'
+    : _jbTanggal(a) + ' ' + _jbJam(a) + ' – ' + _jbTanggal(b) + ' ' + _jbJam(b) + ' WIB';
+  bar.classList.remove('hidden');
+  tickJadwal();
+  _jadwalTimer = setInterval(tickJadwal, 1000);
+}
+function tickJadwal() {
+  if (!jadwalAktif) return;
+  const bar = document.getElementById('jadwal-bar');
+  const sisa = jadwalAktif.selesaiMs - (Date.now() + jadwalAktif.offsetMs);
+  const timeEl = document.getElementById('jb-time'), stateEl = document.getElementById('jb-state');
+  if (sisa <= 0) {
+    stopJadwal(); bar.classList.remove('warn'); bar.classList.add('habis');
+    stateEl.textContent = 'Waktu ujian berakhir'; timeEl.textContent = '00:00:00';
+    if (!_jadwalEnd) { _jadwalEnd = true; toast('error', 'Waktu Ujian Berakhir', 'Segera kirim jawaban Anda ke pengawas.', 8000); }
+    return;
+  }
+  const p2 = n => String(n).padStart(2, '0');
+  const h = Math.floor(sisa / 3600000), m = Math.floor(sisa % 3600000 / 60000), s = Math.floor(sisa % 60000 / 1000);
+  timeEl.textContent = p2(h) + ':' + p2(m) + ':' + p2(s);
+  stateEl.textContent = 'Sisa waktu';
+  const kritis = sisa <= 10 * 60000;
+  bar.classList.toggle('warn', kritis);
+  if (kritis && !_jadwalWarn) { _jadwalWarn = true; toast('warn', 'Sisa 10 Menit', 'Periksa kembali jawaban Anda.', 6000); }
+}
+
 /* ═══════════════ UTILS ═══════════════ */
 function showPage(id) {
+  if (id !== 'hal-soal') stopJadwal();
   ['hal-cover','hal-peserta','hal-soal'].forEach(pid => { document.getElementById(pid).classList.toggle('hidden', pid !== id); });
 }
 
