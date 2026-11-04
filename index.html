@@ -621,7 +621,7 @@ const GAS_URL_JAWABAN = 'https://script.google.com/macros/s/AKfycbyktcRU3b8pCVaE
 
 /* ═══════════════ ROUTING JAWABAN PER KELAS ═══════════════
    Setiap kelas punya Web App Apps Script sendiri untuk
-   menyimpan hasil ujian ke spreadsheet kelas masing-masing.
+   menyimpan hasil ujian ke server kelas masing-masing.
    Kunci di map ini dinormalisasi (huruf besar, tanpa spasi)
    agar cocok dengan berbagai format penulisan kelas seperti
    "7A", "7 A", "VII A", dsb — lihat fungsi normalizeKelas().
@@ -1020,7 +1020,7 @@ async function prosesLogin(kode, password) {
    ACAK SOAL
    Simpan _noAsli (nomor soal asli dari GAS) sebelum
    diacak. Key ini dipakai saat mencocokkan jawaban vs
-   kunci, dan saat kirim hasil ke spreadsheet, agar
+   kunci, dan saat kirim hasil ke server, agar
    selalu cocok dengan urutan asli di sheet GAS.
    ═══════════════════════════════════════════════════ */
 function acakSoal(list) {
@@ -1217,7 +1217,7 @@ function goToNext() {
    sejak getSoal) → hitung skor instan di client (kunci
    sudah tersedia di soalList[i].kunci sejak awal) →
    tampilkan nilai langsung ke siswa → kirim hasil ke
-   Apps Script kelas yang sesuai untuk ditulis ke spreadsheet.
+   Apps Script kelas yang sesuai untuk ditulis ke server.
    ═══════════════════════════════════════════════════════ */
 function validasiKirim() {
   const passInput = document.getElementById('pass-selesai').value;
@@ -1293,7 +1293,7 @@ async function prosesSelesai() {
   try { localStorage.setItem(PENDING_KEY, JSON.stringify(pending)); } catch (_) {}
   clearInterval(timerInterval);
 
-  // 3. Kirim ke spreadsheet — ulangi terus sampai berhasil, tombol Selesai baru muncul setelah itu
+  // 3. Kirim ke server — ulangi terus sampai berhasil, tombol Selesai baru muncul setelah itu
   await kirimHasilSampaiBerhasil(pending);
 }
 
@@ -1311,7 +1311,7 @@ function tampilModalHasil(pending) {
         '<strong>' + (pending.nama || '') + '</strong>' +
         '<div class="hasil-score-num">' + pending.nilai + '</div>' +
         '<div class="hasil-score-sub">' + pending.benar + ' benar dari ' + pending.total + ' soal</div>' +
-        '<span class="hasil-sync-note pending" id="sync-status-chip">⏳ Menyimpan ke spreadsheet...</span>' +
+        '<span class="hasil-sync-note pending" id="sync-status-chip">⏳ Menyimpan ke server...</span>' +
         '<div style="font-size:11px;color:var(--muted);margin-top:10px;">Jangan tutup halaman ini sampai tombol “Selesai” muncul.</div>' +
       '</div>',
     buttons: [],   // tombol Selesai sengaja disembunyikan sampai data benar-benar terkirim
@@ -1340,7 +1340,7 @@ async function kirimHasilSampaiBerhasil(pending) {
       });
       continue;
     }
-    setChip('pending', '⏳ Menyimpan ke spreadsheet... (percobaan ke-' + percobaan + ')');
+    setChip('pending', '⏳ Menyimpan ke server... (percobaan ke-' + percobaan + ')');
     try {
       const res = await gasGet('simpanHasilUjian', pending.params, pending.gasUrlTujuan);
       if (res && res.success) break;
@@ -1354,7 +1354,7 @@ async function kirimHasilSampaiBerhasil(pending) {
   clearSession();
   window.removeEventListener('beforeunload', _guardUnload);
   _sedangMengirim = false;
-  setChip('done', '✓ Tersimpan ke spreadsheet');
+  setChip('done', '✓ Tersimpan ke server');
   const act = document.getElementById('modal-actions'); act.innerHTML = '';
   const btn = document.createElement('button');
   btn.className = 'modal-btn success'; btn.textContent = 'Selesai';
