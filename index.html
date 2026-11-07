@@ -843,7 +843,14 @@ window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('palette-handle-close').addEventListener('click', closePalette);
   document.getElementById('palette-overlay').addEventListener('click', closePaletteOnOverlay);
   const kodeMapelEl = document.getElementById('kode-mapel');
-  kodeMapelEl.addEventListener('input', () => { kodeMapelEl.value = kodeMapelEl.value.toUpperCase(); });
+  kodeMapelEl.addEventListener('input', () => {
+    const up = kodeMapelEl.value.toUpperCase();
+    if (up !== kodeMapelEl.value) {
+      const s = kodeMapelEl.selectionStart, e = kodeMapelEl.selectionEnd;
+      kodeMapelEl.value = up;
+      kodeMapelEl.setSelectionRange(s, e);
+    }
+  });
   kodeMapelEl.addEventListener('blur', cekKodeMapel);
   document.getElementById('no-peserta').addEventListener('input', onNoPesertaInput);
   document.getElementById('pass-mulai').addEventListener('keydown', e => { if (e.key === 'Enter') mulaiUjian(); });
